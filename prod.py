@@ -3,16 +3,15 @@ from confluent_kafka import Producer
 from confluent_kafka import KafkaException, KafkaError
 
 def run_producer():
-  p = Producer({
+  producer = Producer({
   'bootstrap.servers': 'localhost:9092,localhost:9093,localhost:9094',
-  # 'security_protocol': 'plaintext',
-  # 'acks': '-1',
-  # 'partitioner': 'consistent_random'
+  'partitioner': 'consistent_random',
+  'security.protocol': 'plaintext'
   })
 
-  print(p)
+  print(producer)
   
-  topic_info = p.list_topics()
+  topic_info = producer.list_topics()
   
   print(topic_info.cluster_id)
   print(topic_info.brokers)

@@ -1,7 +1,8 @@
-from typing import List
 import tweepy
 import configparser
 import time
+import json
+from pprint import pprint
 
 config = configparser.ConfigParser()
 config.read('config.ini')
@@ -17,26 +18,39 @@ client = tweepy.Client(bearer_token, api_key, api_key_secret, access_token, acce
 auth = tweepy.OAuth1UserHandler(api_key, api_key_secret, access_token, access_token_secret)
 api = tweepy.API(auth)
 
-search_terms = ['data engineer',  'remote',  'job']
+search_terms = ["scala", "programming", "coding"]
 
 class Listener(tweepy.StreamingClient):
   def on_connect(self):
     print("Connected")
 
-  def on_tweet(self, tweet):
-    if tweet.referenced_tweets == None:
-      print("\n")       #pretty
-      print(tweet.text)
-      print("------------------------------------------------------------")
-      time.sleep(0.2)
+  # def on_tweet(self, tweet):
+  #   if tweet.referenced_tweets == None:
+  #   #  print(tweet.author_id)
+  #     user_data = client.get_user(id=tweet.data['author_id'])
+  #    # print(user_data[])
+  #     print(tweet.text)
+  #     print(client.get_user(id=tweet.data['author_id']))
+  #    # client.get_user(tweet.data['id'])
+  #   #  print(tweet.created_at)
+  #     print("-------------------------------------------------")
+  #     time.sleep(0.2)
+  def on_data(self, data):
+    print("\n")
+    msg = json.loads(data)
+    pprint(msg)
+    print(msg['data']['id'])
+    print("-------------------------------------")
+
 
 
 stream = Listener(bearer_token=bearer_token)
 
+#stream.add_rules(tweepy.StreamRule(search_terms))
 for term in search_terms:
   stream.add_rules(tweepy.StreamRule(term))
 
-# stream.filter(tweet_fields=['referenced_tweets'])
+stream.filter(tweet_fields=['referenced_tweets', 'author_id'])
 
 
 def get_all_rule_ids():
