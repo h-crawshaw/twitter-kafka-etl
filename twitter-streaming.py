@@ -1,6 +1,3 @@
-from ensurepip import bootstrap
-from http.client import REQUEST_TIMEOUT
-from urllib import request
 import tweepy
 import configparser
 import time
