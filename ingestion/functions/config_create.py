@@ -10,5 +10,5 @@ config['twitter'] = {
   'access_token_secret': '8jkjpvnb5WB7rRHSWkrGm3WF4C3PWe2T1fqqnirbaBxp4'
 }
 
-with open('./config.ini', 'w') as f:
+with open('./ingestion/functions/config.ini', 'w') as f:
   config.write(f)
