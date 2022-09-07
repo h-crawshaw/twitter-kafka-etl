@@ -1,0 +1,7 @@
+package streamingConsumer
+
+object consumer {
+
+
+
+}
