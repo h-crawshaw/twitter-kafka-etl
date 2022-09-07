@@ -46,8 +46,8 @@ object consumer {
       .format("parquet") // or console
       .option("checkpointLocation", "s3a://twitter-kafka-app/checkpoints/")
       .option("path", "s3a://twitter-kafka-app/processed-data/")
-      //   .outputMode("append")
-      .option("truncate", "false")
+      .outputMode("append")
+      //   .option("truncate", "false")
       .partitionBy("date", "hour")
       .start()
       .awaitTermination()

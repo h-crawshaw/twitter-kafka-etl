@@ -2,8 +2,8 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/modules/udemy-spark-streaming.iml" filepath="$PROJECT_DIR$/.idea/modules/udemy-spark-streaming.iml" />
-      <module fileurl="file://$PROJECT_DIR$/.idea/modules/udemy-spark-streaming-build.iml" filepath="$PROJECT_DIR$/.idea/modules/udemy-spark-streaming-build.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/spark-app.iml" filepath="$PROJECT_DIR$/.idea/modules/spark-app.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/spark-app-build.iml" filepath="$PROJECT_DIR$/.idea/modules/spark-app-build.iml" />
     </modules>
   </component>
 </project>
