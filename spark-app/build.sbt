@@ -57,6 +57,7 @@ libraryDependencies ++= Seq(
   "com.github.nscala-time" %% "nscala-time" % "2.32.0",
 
   // NLP
-  "com.johnsnowlabs.nlp" %% "spark-nlp" % "4.1.0"
-
+  "com.johnsnowlabs.nlp" %% "spark-nlp" % "4.1.0",
 )
+// https://mvnrepository.com/artifact/org.apache.spark/spark-mllib
+libraryDependencies += "org.apache.spark" %% "spark-mllib" % sparkVersion % "provided"

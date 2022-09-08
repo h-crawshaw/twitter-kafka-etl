@@ -1,12 +1,14 @@
 package streamingConsumer
 
+import com.johnsnowlabs.nlp.annotator._
+import com.johnsnowlabs.nlp.base._
 import com.johnsnowlabs.nlp.pretrained.PretrainedPipeline
 import org.apache.spark.sql.functions._
+import org.apache.spark.sql.types.{StringType, StructField, StructType, TimestampType}
 import org.apache.spark.sql.{DataFrame, SparkSession}
 
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
-import scala.collection.JavaConverters._
 import scala.util.control.NonFatal
 // config-tutorial.scala
 
@@ -31,42 +33,42 @@ object consumer {
 
   import spark.implicits._
 
-//  def readFromKafka(): Unit = {
-//    // https://spark.apache.org/docs/latest/structured-streaming-kafka-integration.html
-//    val DFschema = StructType(Array(
-//      StructField("data", StructType(Array(
-//        StructField("created_at", TimestampType),
-//        StructField("text", StringType)))
-//      )))
-//    val servers = "localhost:29092,localhost:29093,localhost:29094"
-//    import spark.implicits._
-//
-//    val kafkaDF: DataFrame = spark.readStream
-//      .format("kafka")
-//      .option("kafka.bootstrap.servers", servers)
-//      .option("failOnDataLoss", "false")
-//      .option("subscribe", "twitter-housing")
-//      .option("startingOffsets", "earliest")
-//      .load()
-//      .selectExpr("CAST(key AS STRING)", "CAST(value AS STRING)")
-//      .select(col("key"), from_json($"value", DFschema).alias("structdata"))
-//      .select($"key",
-//        $"structdata.data".getField("created_at").alias("created_at"),
-//        $"structdata.data".getField("text").alias("text"))
-//      .withColumn("hour", date_format(col("created_at"), "HH"))
-//      .withColumn("date", date_format(col("created_at"), "yyyy-MM-dd"))
-//
-//    kafkaDF
-//      .writeStream
-//      .format("parquet") // or console
-//      .option("checkpointLocation", "s3a://twitter-kafka-app/checkpoints/")
-//      .option("path", "s3a://twitter-kafka-app/processed-data/")
-//      .outputMode("append")
-//      //   .option("truncate", "false")
-//      .partitionBy("date", "hour")
-//      .start()
-//      .awaitTermination()
-//  }
+  def readFromKafka(): Unit = {
+    // https://spark.apache.org/docs/latest/structured-streaming-kafka-integration.html
+    val DFschema = StructType(Array(
+      StructField("data", StructType(Array(
+        StructField("created_at", TimestampType),
+        StructField("text", StringType)))
+      )))
+    val servers = "localhost:29092,localhost:29093,localhost:29094"
+    import spark.implicits._
+
+    val kafkaDF: DataFrame = spark.readStream
+      .format("kafka")
+      .option("kafka.bootstrap.servers", servers)
+      .option("failOnDataLoss", "false")
+      .option("subscribe", "twitter-housing")
+      .option("startingOffsets", "earliest")
+      .load()
+      .selectExpr("CAST(key AS STRING)", "CAST(value AS STRING)")
+      .select(col("key"), from_json($"value", DFschema).alias("structdata"))
+      .select($"key",
+        $"structdata.data".getField("created_at").alias("created_at"),
+        $"structdata.data".getField("text").alias("text"))
+      .withColumn("hour", date_format(col("created_at"), "HH"))
+      .withColumn("date", date_format(col("created_at"), "yyyy-MM-dd"))
+
+    kafkaDF
+      .writeStream
+      .format("parquet") // or console
+      .option("checkpointLocation", "s3a://twitter-kafka-app/checkpoints/")
+      .option("path", "s3a://twitter-kafka-app/processed-data/")
+      .outputMode("append")
+      //   .option("truncate", "false")
+      .partitionBy("date", "hour")
+      .start()
+      .awaitTermination()
+  }
 
   def transformSentimentDF: DataFrame = {
 
@@ -109,27 +111,61 @@ object consumer {
       null
     }
 
-    val sentimentPipeline = PretrainedPipeline("analyze_sentimentdl_use_twitter", lang="en")
-    sentimentPipeline
+    val sentiment_pipeline =PretrainedPipeline("analyze_sentimentdl_use_twitter", lang="en")
+    sentiment_pipeline
       .annotate(rawDF, "text")
       .select("created_at", "text")
-      .select(element_at($"sentiment.result", 1).alias("sentiment"))
+      .withColumn("sentiment", element_at($"sentiment.result", 1))
   }
 
+//  val documentAssembler = new DocumentAssembler()
+//    .setInputCol("text")
+//    .setOutputCol("document")
+//  val tokenizer = new Tokenizer()
+//    .setInputCols("document")
+//    .setOutputCol("token")
+//  val sequenceClassifier = DistilBertForSequenceClassification.pretrained("distilbert_sequence_classifier_emotion", "en")
+//    .setInputCols("token", "document")
+//    .setOutputCol("class")
+//    .setMaxSentenceLength(512)
 
-
-
-//  def transformSentimentDF: Unit() = {
+//  def processDF(sentimentDF: DataFrame): DataFrame = {
+//    val emotion_pipeline = new Pipeline()
+//      .setStages(Array(documentAssembler, tokenizer, sequenceClassifier))
 //
-//    def returnCurrentPath = {
-//    }
+//    emotion_pipeline.fit(sentimentDF).transform(sentimentDF)
+//      .select($"created_at",
+//        $"text",
+//        $"sentiment",
+//        element_at($"class.result", 1).alias("emotion")
+//      )
+//  }
 
- // }
+//  def aggregateDF(processedDF: DataFrame): Unit = {
+//    val aggSentiment = processedDF.groupBy("topic")
+//      .agg(avg(when($"sentiment".eqNullSafe("positive"), 1)
+//        .otherwise(0)).alias("positivity"),
+//        count($"topic").alias("counts"))
+//      .withColumn("created_at", current_timestamp())
+//      .select($"topic".alias("topic_agg"),
+//        round($"positivity", 2).alias("positivity_rate"),
+//        $"counts",
+//        $"created_at")
+//
+//    val aggEmotion = processedDF.groupBy("topic", "emotion")
+//      .agg(count($"topic")).alias("counts")
+//      .groupBy("topic").pivot("emotion").sum("counts").na.fill(0)
+//
+//    val innerJoin = aggSentiment.join(aggEmotion,
+//      aggSentiment.col("topic_agg") === aggEmotion.col("topic"))
+//      .select("*")
+//
+//    innerJoin.write.mode("append").csv("src/main/coolcsvbro.csv")
+//  }
 
   def main(args: Array[String]): Unit = {
-   // readFromKafka()
+    // readFromKafka()
+    transformSentimentDF
   }
-
-
-
 }
+
