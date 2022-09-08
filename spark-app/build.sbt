@@ -16,7 +16,7 @@ val nlpLibVersion = "3.5.1"
 resolvers ++= Seq(
   "bintray-spark-packages" at "https://dl.bintray.com/spark-packages/maven",
   "Typesafe Simple Repository" at "https://repo.typesafe.com/typesafe/simple/maven-releases",
-  "MavenRepository" at "https://mvnrepository.com"
+  "MavenRepository" at "https://mvnrepository.com",
 )
 
 /*
@@ -51,5 +51,12 @@ libraryDependencies ++= Seq(
 
   // kafka
   "org.apache.kafka" %% "kafka" % kafkaVersion,
-  "org.apache.kafka" % "kafka-streams" % kafkaVersion
+  "org.apache.kafka" % "kafka-streams" % kafkaVersion,
+
+  // Nscala-time
+  "com.github.nscala-time" %% "nscala-time" % "2.32.0",
+
+  // NLP
+  "com.johnsnowlabs.nlp" %% "spark-nlp" % "4.1.0"
+
 )
