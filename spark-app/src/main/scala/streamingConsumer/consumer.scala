@@ -118,16 +118,16 @@ object consumer {
       .withColumn("sentiment", element_at($"sentiment.result", 1))
   }
 
-//  val documentAssembler = new DocumentAssembler()
-//    .setInputCol("text")
-//    .setOutputCol("document")
-//  val tokenizer = new Tokenizer()
-//    .setInputCols("document")
-//    .setOutputCol("token")
-//  val sequenceClassifier = DistilBertForSequenceClassification.pretrained("distilbert_sequence_classifier_emotion", "en")
-//    .setInputCols("token", "document")
-//    .setOutputCol("class")
-//    .setMaxSentenceLength(512)
+  val documentAssembler = new DocumentAssembler()
+    .setInputCol("text")
+    .setOutputCol("document")
+  val tokenizer = new Tokenizer()
+    .setInputCols("document")
+    .setOutputCol("token")
+  val sequenceClassifier = DistilBertForSequenceClassification.pretrained("distilbert_sequence_classifier_emotion", "en")
+    .setInputCols("token", "document")
+    .setOutputCol("class")
+    .setMaxSentenceLength(512)
 
 //  def processDF(sentimentDF: DataFrame): DataFrame = {
 //    val emotion_pipeline = new Pipeline()

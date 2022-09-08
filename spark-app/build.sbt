@@ -60,4 +60,4 @@ libraryDependencies ++= Seq(
   "com.johnsnowlabs.nlp" %% "spark-nlp" % "4.1.0",
 )
 // https://mvnrepository.com/artifact/org.apache.spark/spark-mllib
-libraryDependencies += "org.apache.spark" %% "spark-mllib" % sparkVersion % "provided"
+libraryDependencies += "org.apache.spark" %% "spark-mllib" % sparkVersion % "compile"

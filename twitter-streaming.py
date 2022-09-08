@@ -28,12 +28,10 @@ def topics_config(topics, servers):
   #
   for topic, f in fs.items():
     try:
-      print(f.result()) # returns None
+      f.result() # returns None
       print(f"Topic {topic} successfully created.")
     except Exception as e:
       print(f"Failed to create topic {topic} -- {e}.")
-topics_config(['twitter-housing'], servers)
-
 
 def send_message(data, name_topic, id):
   """Begin sending messages and assign every message a key
@@ -45,21 +43,20 @@ def send_message(data, name_topic, id):
 
 # TWEEPY
 
-config = configparser.ConfigParser()
-config.read('config.ini')
+def check_rules(bearer_token, rules, tags):
 
-api_key = config['twitter']['api_key']
-api_key_secret = config['twitter']['api_key_secret']
-bearer_token = config['twitter']['bearer_token']
-access_token = config['twitter']['access_token']
-access_token_secret = config['twitter']['access_token_secret']
+  def add_rules(client, rules, tags):
+    for rule, tag in zip(rules, tags):
+      client.add_rules(tweepy.StreamRule(value=rule, tag=tag))
 
-client = tweepy.Client(bearer_token, api_key, api_key_secret, access_token, access_token_secret)
-auth = tweepy.OAuth1UserHandler(api_key, api_key_secret, access_token, access_token_secret)
-api = tweepy.API(auth)
-
-search_terms = ["housing market OR house prices OR home prices OR price of homes OR price of houses  place_country:US -is:retweet -has:hashtags"]
-
+  client = tweepy.StreamingClient(bearer_token, wait_on_rate_limit=False)
+  if client.get_rules()[3]['result_count'] != 0:
+    n_rules = client.get_rules()[0]
+    ids = [n_rules[i_tuple[0]][2] for i_tuple in enumerate(n_rules)]
+    client.delete_rules(ids)
+    add_rules(client, rules, tags)
+  else:
+    add_rules(client, rules, tags)
 
 class Listener(tweepy.StreamingClient):
   def on_connect(self):
@@ -69,47 +66,30 @@ class Listener(tweepy.StreamingClient):
     print("\n")
     print(data)
     print("-------------------------------------------------")
-    # if 'matching_rules' in message:
-    #   for rule in message['matching_rules']:
     message = json.loads(data)
-    send_message(data, name_topic='twitter-housing', id=message['data']['id'])
-    time.sleep(0.2)
+    if 'matching_rules' in message:
+      for rule in message['matching_rules']:
+        send_message(data, name_topic=rule['tag'], id=message['data']['id'])
+    else:
+      print("Operational error, reconnecting...")
+    return True
+   
+  def on_error(self, status):
+    print(status)
 
-stream = Listener(bearer_token=bearer_token)
+tags = ["putin", "zelensky", "biden", "nato"]
+query = " -is:retweet -has:hashtags"
+rules = [f"putin {query}",
+    f"zelensky {query}",
+    f"biden {query}",
+    f"nato {query}"]
 
-stream.add_rules(tweepy.StreamRule(search_terms))
-for term in search_terms:
-  stream.add_rules(tweepy.StreamRule(term))
+config = configparser.ConfigParser()
+config.read('config.ini')
 
+bearer_token = config['twitter']['bearer_token']
 
-stream.filter(tweet_fields=['created_at'])
-
-# print(str(stream.get_rules().data))
-# stream.delete_rules(["1567219387018481675", "1567200658607980547"])
-# print(str(stream.get_rules().data))
-
-# def get_all_rule_ids():
-#   rules = str(stream.get_rules().data)
-#   print(rules)
-# get_all_rule_ids
-# def get_all_rule_ids():
-#   rules = str(stream.get_rules().data)
-#   a_list = rules.split(", ")
-
-#   subs = "id"
-#   ids_str_list = [s for s in a_list if subs in s]
-
-#   ids_list = []
-#   for string in ids_str_list:
-#     ids_list.append(int(''.join(filter(str.isdigit, string))))
-#   return ids_list
-
-# def delete_all_rules():
-#   for id in get_all_rule_ids():
-#     stream.delete_rules(ids=id)
-
-# print(stream.get_rules())
-# print("\n")
-# delete_all_rules()
-# print("\n")
-# print(stream.get_rules())
+check_rules(bearer_token, rules, tags)
+topics_config(topics=tags, servers=servers)
+Listener(bearer_token).filter(tweet_fields=['created_at'])
+  
