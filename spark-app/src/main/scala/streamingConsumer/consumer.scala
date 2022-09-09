@@ -4,6 +4,7 @@ import com.github.nscala_time.time.Imports._
 import com.johnsnowlabs.nlp.annotator._
 import com.johnsnowlabs.nlp.base._
 import com.johnsnowlabs.nlp.pretrained.PretrainedPipeline
+import org.apache.spark.ml.Pipeline
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.{DataFrame, SparkSession}
@@ -82,7 +83,9 @@ object consumer {
       .awaitTermination()
   }
 
-  def transformSentimentDF: Unit = {
+  val sentimentPipeline: PretrainedPipeline = PretrainedPipeline("analyze_sentimentdl_use_twitter", lang = "en")
+
+  def transformSentimentDF(sentimentPipeline: PretrainedPipeline): DataFrame = {
 
     val dateParser: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
     val hourParser: DateTimeFormatter = DateTimeFormatter.ofPattern("HH")
@@ -94,8 +97,8 @@ object consumer {
       } else {
         LocalDateTime.now().format(dateParser)
       }
-      val preHour: String = LocalDateTime.now().minusHours(9).format(hourParser) // minus = 1 change later
-      f"s3a://twitter-kafka-app/processed-data/date=$date/hour=$preHour/*"
+      val preHour: String = LocalDateTime.now().minusHours(11).format(hourParser) // minus = 1 change later
+      f"s3a://twitter-kafka-app/raw-data/date=$date/hour=$preHour/*"
     }
 
     //
@@ -110,7 +113,7 @@ object consumer {
           Thread.sleep(3600000)
           val hour = LocalDateTime.now().format(hourParser)
           val date = LocalDateTime.now().format(dateParser)
-          val paths = f"s3a://twitter-kafka-app/processed-data/date=$date/hour=$hour/*"
+          val paths = f"s3a://twitter-kafka-app/raw-data/date=$date/hour=$hour/*"
           try {
             Some(spark.read.format("parquet").load(paths))
           } catch {
@@ -122,65 +125,68 @@ object consumer {
     }
     val gotRawDF = rawDF.get
 
-    val sentiment_pipeline = PretrainedPipeline("analyze_sentimentdl_use_twitter", lang = "en")
-    val gotsentipipe = sentiment_pipeline
+    sentimentPipeline
       .annotate(gotRawDF, "text")
       .select("created_at", "text", "topic")
       .withColumn("sentiment", element_at($"sentiment.result", 1))
-    gotsentipipe.show()
-
   }
-//}
-//
-//  val documentAssembler = new DocumentAssembler()
-//    .setInputCol("text")
-//    .setOutputCol("document")
-//  val tokenizer = new Tokenizer()
-//    .setInputCols("document")
-//    .setOutputCol("token")
-//  val sequenceClassifier = DistilBertForSequenceClassification.pretrained("distilbert_sequence_classifier_emotion", "en")
-//    .setInputCols("token", "document")
-//    .setOutputCol("class")
-//    .setMaxSentenceLength(512)
-//
-//  def processDF(sentimentDF: DataFrame): DataFrame = {
-//    val emotion_pipeline = new Pipeline()
-//      .setStages(Array(documentAssembler, tokenizer, sequenceClassifier))
-//
-//    emotion_pipeline.fit(sentimentDF).transform(sentimentDF)
-//      .select($"created_at",
-//        $"text",
-//        $"topic",
-//        $"sentiment",
-//        element_at($"class.result", 1).alias("emotion")
-//      )
-//  }
-//
-//  def aggregateDF(processedDF: DataFrame): Unit = {
-//    val aggSentiment = processedDF.groupBy("topic")
-//      .agg(avg(when($"sentiment".eqNullSafe("positive"), 1)
-//        .otherwise(0)).alias("positivity"),
-//        count($"topic").alias("counts"))
-//      .withColumn("created_at", current_timestamp())
-//      .select($"topic".alias("topic_agg"),
-//        round($"positivity", 2).alias("positivity_rate"),
-//        $"counts",
-//        $"created_at")
-//
-//    val aggEmotion = processedDF.groupBy("topic", "emotion")
-//      .agg(count($"topic")).alias("counts")
-//      .groupBy("topic").pivot("emotion").sum("counts").na.fill(0)
-//
-//    val innerJoin = aggSentiment.join(aggEmotion,
-//      aggSentiment.col("topic_agg") === aggEmotion.col("topic"))
-//      .select("*")
-////
-//    innerJoin.write.mode("append").csv("src/main/coolcsvbro.csv")
-//  }
+
+
+  val documentAssembler: DocumentAssembler = new DocumentAssembler()
+    .setInputCol("text")
+    .setOutputCol("document")
+  val tokenizer: Tokenizer = new Tokenizer()
+    .setInputCols("document")
+    .setOutputCol("token")
+  val sequenceClassifier: DistilBertForSequenceClassification =
+    DistilBertForSequenceClassification.pretrained("distilbert_sequence_classifier_emotion", "en")
+    .setInputCols("token", "document")
+    .setOutputCol("class")
+    .setMaxSentenceLength(512)
+
+  val emotionPipeline: Pipeline = new Pipeline()
+    .setStages(Array(documentAssembler, tokenizer, sequenceClassifier))
+  def processDF(sentimentDF: DataFrame, emotionPipeline: Pipeline): DataFrame = {
+
+    emotionPipeline.fit(sentimentDF).transform(sentimentDF)
+      .select($"created_at",
+        $"text",
+        $"topic",
+        $"sentiment",
+        element_at($"class.result", 1).alias("emotion")
+      )
+  }
+
+  def aggregateDF(processedDF: DataFrame): Unit = {
+    val aggSentiment = processedDF.groupBy("topic")
+      .agg(avg(when($"sentiment".eqNullSafe("positive"), 1)
+        .otherwise(0)).alias("positivity"),
+        count($"topic").alias("counts"))
+      .withColumn("created_at", current_timestamp())
+      .select($"topic".alias("topic_agg"),
+        round($"positivity", 2).alias("positivity_rate"),
+        $"counts",
+        $"created_at")
+
+    val aggEmotion = processedDF.groupBy("topic", "emotion")
+      .agg(count($"topic")).alias("counts")
+      .groupBy("topic").pivot("emotion").sum("counts").na.fill(0)
+
+    val innerJoin = aggSentiment.join(aggEmotion,
+      aggSentiment.col("topic_agg") === aggEmotion.col("topic"))
+      .select("*")
+
+    val mdbUri = "mongodb://<username>:<password>@<clustername>.mongodb.net/<database>.<collection>?retryWrites=true&w=majority"
+    innerJoin.write
+      .format("mongodb")
+      .mode("append")
+      .option("uri", mdbUri)
+      .save()
+  }
 
   def main(args: Array[String]): Unit = {
-    //readFromKafka()
-    transformSentimentDF
+    readFromKafka()
+    aggregateDF(processDF(transformSentimentDF(sentimentPipeline), emotionPipeline))
   }
 }
 
