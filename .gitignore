@@ -3,6 +3,9 @@ config.ini
 
 # scala/intellij
 /target
+/target/*
+spark-app/target/
+spark-app/target
 spark-app/*.log
 spark-app/*.iml
 spark-app/*.ipr
