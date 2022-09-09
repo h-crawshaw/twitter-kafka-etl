@@ -1,10 +1,11 @@
 package streamingConsumer
 
+import com.github.nscala_time.time.Imports._
 import com.johnsnowlabs.nlp.annotator._
 import com.johnsnowlabs.nlp.base._
 import com.johnsnowlabs.nlp.pretrained.PretrainedPipeline
 import org.apache.spark.sql.functions._
-import org.apache.spark.sql.types.{StringType, StructField, StructType, TimestampType}
+import org.apache.spark.sql.types._
 import org.apache.spark.sql.{DataFrame, SparkSession}
 
 import java.time.LocalDateTime
@@ -25,10 +26,14 @@ object consumer {
   val spark: SparkSession = SparkSession.builder()
     .appName("Integrating Kafka")
     .master("local[*]")
-    // .config("fs.s3.impl", "org.apache.hadoop.fs.s3native.NativeS3FileSystem")
     .config("fs.s3a.aws.credentials.provider", "org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider")
     .config("fs.s3a.access.key", "AKIAW2FZXUR42DC3HXPU")
     .config("fs.s3a.secret.key", "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")
+    .config("spark.streaming.stopGracefullyOnShutdown", "true")
+    .config("spark.sql.shuffle.partitions", 8)
+    .config("spark.driver.memory","10G")
+    .config("spark.driver.maxResultSize", "0")
+    .config("spark.kryoserializer.buffer.max", "2000M")
     .getOrCreate()
 
   import spark.implicits._
@@ -38,39 +43,46 @@ object consumer {
     val DFschema = StructType(Array(
       StructField("data", StructType(Array(
         StructField("created_at", TimestampType),
-        StructField("text", StringType)))
+        StructField("text", StringType)))),
+      StructField("matching_rules", ArrayType(StructType(Array(
+        StructField("tag", StringType)
       )))
+    )))
+
     val servers = "localhost:29092,localhost:29093,localhost:29094"
+    val topics = "biden,putin,zelensky,nato"
     import spark.implicits._
 
     val kafkaDF: DataFrame = spark.readStream
       .format("kafka")
       .option("kafka.bootstrap.servers", servers)
       .option("failOnDataLoss", "false")
-      .option("subscribe", "twitter-housing")
+      .option("subscribe", topics)
       .option("startingOffsets", "earliest")
       .load()
       .selectExpr("CAST(key AS STRING)", "CAST(value AS STRING)")
       .select(col("key"), from_json($"value", DFschema).alias("structdata"))
       .select($"key",
         $"structdata.data".getField("created_at").alias("created_at"),
-        $"structdata.data".getField("text").alias("text"))
+        $"structdata.data".getField("text").alias("text"),
+        $"structdata.matching_rules".getField("tag").alias("topic"))
       .withColumn("hour", date_format(col("created_at"), "HH"))
       .withColumn("date", date_format(col("created_at"), "yyyy-MM-dd"))
+
 
     kafkaDF
       .writeStream
       .format("parquet") // or console
       .option("checkpointLocation", "s3a://twitter-kafka-app/checkpoints/")
-      .option("path", "s3a://twitter-kafka-app/processed-data/")
+      .option("path", "s3a://twitter-kafka-app/raw-data/")
       .outputMode("append")
-      //   .option("truncate", "false")
+     // .option("truncate", "false")
       .partitionBy("date", "hour")
       .start()
       .awaitTermination()
   }
 
-  def transformSentimentDF: DataFrame = {
+  def transformSentimentDF: Unit = {
 
     val dateParser: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
     val hourParser: DateTimeFormatter = DateTimeFormatter.ofPattern("HH")
@@ -82,53 +94,55 @@ object consumer {
       } else {
         LocalDateTime.now().format(dateParser)
       }
-      val preHour: String = LocalDateTime.now().minusHours(1).format(hourParser)
-      f"s3a://twitter-kafka-app/raw-data/date=$date/hour=$preHour"
+      val preHour: String = LocalDateTime.now().minusHours(9).format(hourParser) // minus = 1 change later
+      f"s3a://twitter-kafka-app/processed-data/date=$date/hour=$preHour/*"
     }
 
-
+    //
+    //
     val paths = returnCurrentPath
 
-    //      val hour = LocalDateTime.now().format(hourParser)
-    //      val date = LocalDateTime.now().format(dateParser)
-
-    val rawDF: DataFrame = {
+    val rawDF: Option[DataFrame] = {
       try {
-        spark.read.format("parquet").load(paths)
+        Some(spark.read.format("parquet").load(paths))
       } catch {
         case NonFatal(e) =>
-        Thread.sleep(3600000)
-        val hour = LocalDateTime.now().format(hourParser)
-        val date = LocalDateTime.now().format(dateParser)
-        val paths = f"s3a://twitter-kafka-app/raw-data/date=$date/hour=$hour/*"
-        try {
-          spark.read.format("parquet").load(paths)
-        } catch {
-          case NonFatal(e) => None
-          print("No path found.")
+          Thread.sleep(3600000)
+          val hour = LocalDateTime.now().format(hourParser)
+          val date = LocalDateTime.now().format(dateParser)
+          val paths = f"s3a://twitter-kafka-app/processed-data/date=$date/hour=$hour/*"
+          try {
+            Some(spark.read.format("parquet").load(paths))
+          } catch {
+            case NonFatal(e) =>
+              println("Path not found.")
+              None
           }
-        }
-      null
+      }
     }
+    val gotRawDF = rawDF.get
 
-    val sentiment_pipeline =PretrainedPipeline("analyze_sentimentdl_use_twitter", lang="en")
-    sentiment_pipeline
-      .annotate(rawDF, "text")
-      .select("created_at", "text")
+    val sentiment_pipeline = PretrainedPipeline("analyze_sentimentdl_use_twitter", lang = "en")
+    val gotsentipipe = sentiment_pipeline
+      .annotate(gotRawDF, "text")
+      .select("created_at", "text", "topic")
       .withColumn("sentiment", element_at($"sentiment.result", 1))
+    gotsentipipe.show()
+
   }
-
-  val documentAssembler = new DocumentAssembler()
-    .setInputCol("text")
-    .setOutputCol("document")
-  val tokenizer = new Tokenizer()
-    .setInputCols("document")
-    .setOutputCol("token")
-  val sequenceClassifier = DistilBertForSequenceClassification.pretrained("distilbert_sequence_classifier_emotion", "en")
-    .setInputCols("token", "document")
-    .setOutputCol("class")
-    .setMaxSentenceLength(512)
-
+//}
+//
+//  val documentAssembler = new DocumentAssembler()
+//    .setInputCol("text")
+//    .setOutputCol("document")
+//  val tokenizer = new Tokenizer()
+//    .setInputCols("document")
+//    .setOutputCol("token")
+//  val sequenceClassifier = DistilBertForSequenceClassification.pretrained("distilbert_sequence_classifier_emotion", "en")
+//    .setInputCols("token", "document")
+//    .setOutputCol("class")
+//    .setMaxSentenceLength(512)
+//
 //  def processDF(sentimentDF: DataFrame): DataFrame = {
 //    val emotion_pipeline = new Pipeline()
 //      .setStages(Array(documentAssembler, tokenizer, sequenceClassifier))
@@ -136,11 +150,12 @@ object consumer {
 //    emotion_pipeline.fit(sentimentDF).transform(sentimentDF)
 //      .select($"created_at",
 //        $"text",
+//        $"topic",
 //        $"sentiment",
 //        element_at($"class.result", 1).alias("emotion")
 //      )
 //  }
-
+//
 //  def aggregateDF(processedDF: DataFrame): Unit = {
 //    val aggSentiment = processedDF.groupBy("topic")
 //      .agg(avg(when($"sentiment".eqNullSafe("positive"), 1)
@@ -159,12 +174,12 @@ object consumer {
 //    val innerJoin = aggSentiment.join(aggEmotion,
 //      aggSentiment.col("topic_agg") === aggEmotion.col("topic"))
 //      .select("*")
-//
+////
 //    innerJoin.write.mode("append").csv("src/main/coolcsvbro.csv")
 //  }
 
   def main(args: Array[String]): Unit = {
-    // readFromKafka()
+    //readFromKafka()
     transformSentimentDF
   }
 }
