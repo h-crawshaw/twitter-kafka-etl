@@ -61,3 +61,6 @@ libraryDependencies ++= Seq(
 )
 // https://mvnrepository.com/artifact/org.apache.spark/spark-mllib
 libraryDependencies += "org.apache.spark" %% "spark-mllib" % sparkVersion % "compile"
+
+libraryDependencies += "com.typesafe" % "config" % "1.4.2"
+

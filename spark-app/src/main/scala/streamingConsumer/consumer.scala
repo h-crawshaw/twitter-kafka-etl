@@ -3,10 +3,12 @@ package streamingConsumer
 import com.johnsnowlabs.nlp.annotator._
 import com.johnsnowlabs.nlp.base._
 import com.johnsnowlabs.nlp.pretrained.PretrainedPipeline
+import com.typesafe.config.{Config, ConfigFactory}
 import org.apache.spark.ml.Pipeline
+import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.{DataFrame, SparkSession}
+
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import scala.util.control.NonFatal
@@ -14,20 +16,22 @@ import scala.util.control.NonFatal
 
 object consumer {
 
-//  val config = ConfigFactory.load("resources/application.properties")
-//  val servers = ConfigFactory.load().getString("confs.servers")
-//  val accessKey = ConfigFactory.load().getString("confs.accessKey")
-//  val secretAccessKey = ConfigFactory.load().getString("confs.secretAccessKey")
-//  val checkpointPath = ConfigFactory.load().getString("confs.checkpointPath")
-//  val rawPath = ConfigFactory.load().getString("confs.rawPath")
-//  val processedPath = ConfigFactory.load().getString("confs.processedPath")
+  val conf: Config = ConfigFactory.load("resources/application.conf")
+  val servers: String = ConfigFactory.load().getString("add.servers")
+  val accessKey: String = ConfigFactory.load().getString("add.accessKey")
+  val secretAccessKey: String = ConfigFactory.load().getString("add.secretAccessKey")
+  val checkpointPath: String = ConfigFactory.load().getString("add.checkpointPath")
+  val rawPath: String = ConfigFactory.load().getString("add.rawPath")
+  val processedPath: String = ConfigFactory.load().getString("add.processedPath")
+  val topics: String = ConfigFactory.load().getString("add.topics")
+
 
   val spark: SparkSession = SparkSession.builder()
-    .appName("Integrating Kafka")
+    .appName("KafkaConsumer")
     .master("local[*]")
     .config("fs.s3a.aws.credentials.provider", "org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider")
-    .config("fs.s3a.access.key", "AKIAW2FZXUR42DC3HXPU")
-    .config("fs.s3a.secret.key", "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")
+    .config("fs.s3a.access.key", accessKey)
+    .config("fs.s3a.secret.key", secretAccessKey)
     .config("spark.streaming.stopGracefullyOnShutdown", "true")
     .config("spark.sql.shuffle.partitions", 8)
     .config("spark.driver.memory","10G")
@@ -38,7 +42,6 @@ object consumer {
   import spark.implicits._
 
   def readFromKafka(): Unit = {
-    // https://spark.apache.org/docs/latest/structured-streaming-kafka-integration.html
     val DFschema = StructType(Array(
       StructField("data", StructType(Array(
         StructField("created_at", TimestampType),
@@ -48,8 +51,6 @@ object consumer {
       )))
     )))
 
-    val servers = "localhost:29092,localhost:29093,localhost:29094"
-    val topics = "biden,putin,zelensky,nato"
     import spark.implicits._
 
     val kafkaDF: DataFrame = spark.readStream
@@ -57,7 +58,7 @@ object consumer {
       .option("kafka.bootstrap.servers", servers)
       .option("failOnDataLoss", "false")
       .option("subscribe", topics)
-      .option("startingOffsets", "earliest")
+      .option("startingOffsets", "latest")
       .load()
       .selectExpr("CAST(key AS STRING)", "CAST(value AS STRING)")
       .select(col("key"), from_json($"value", DFschema).alias("structdata"))
@@ -72,8 +73,8 @@ object consumer {
     kafkaDF
       .writeStream
       .format("parquet") // or console
-      .option("checkpointLocation", "s3a://twitter-kafka-app/checkpoints/")
-      .option("path", "s3a://twitter-kafka-app/raw-data/")
+      .option("checkpointLocation", checkpointPath)
+      .option("path", rawPath)
       .outputMode("append")
      // .option("truncate", "false")
       .partitionBy("date", "hour")
@@ -95,12 +96,10 @@ object consumer {
       } else {
         LocalDateTime.now().format(dateParser)
       }
-      val preHour: String = LocalDateTime.now().minusHours(11).format(hourParser) // minus = 1 change later
-      f"s3a://twitter-kafka-app/raw-data/date=$date/hour=$preHour/*"
+      val preHour: String = LocalDateTime.now().minusHours(1).format(hourParser) // minus = 1 change later
+      f"${rawPath}date=$date/hour=$preHour/*"
     }
 
-    //
-    //
     val paths = returnCurrentPath
 
     val rawDF: Option[DataFrame] = {
@@ -111,7 +110,7 @@ object consumer {
           Thread.sleep(3600000)
           val hour = LocalDateTime.now().format(hourParser)
           val date = LocalDateTime.now().format(dateParser)
-          val paths = f"s3a://twitter-kafka-app/raw-data/date=$date/hour=$hour/*"
+          val paths = f"${rawPath}date=$date/hour=$hour/*"
           try {
             Some(spark.read.format("parquet").load(paths))
           } catch {
@@ -184,7 +183,7 @@ object consumer {
     innerJoin.write
       .format("parquet")
       .mode("append")
-      .option("path", "s3a://twitter-kafka-app/raw-data/")
+      .option("path", f"$processedPath")
       .partitionBy("emotion", "counts")
   }
 
