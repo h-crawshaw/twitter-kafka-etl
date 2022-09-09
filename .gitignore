@@ -1,2 +1,15 @@
 ./config_create.py
 ./config.ini
+
+# scala/intellij
+target/
+*.log
+*.iml
+*.ipr
+*.iws
+.idea
+.history
+.scala_dependencies
+.cache-main
+*.class
+.bsp/
