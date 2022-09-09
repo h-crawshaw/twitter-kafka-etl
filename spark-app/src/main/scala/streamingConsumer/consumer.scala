@@ -1,6 +1,5 @@
 package streamingConsumer
 
-import com.github.nscala_time.time.Imports._
 import com.johnsnowlabs.nlp.annotator._
 import com.johnsnowlabs.nlp.base._
 import com.johnsnowlabs.nlp.pretrained.PretrainedPipeline
@@ -8,7 +7,6 @@ import org.apache.spark.ml.Pipeline
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.{DataFrame, SparkSession}
-
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import scala.util.control.NonFatal
@@ -146,7 +144,7 @@ object consumer {
 
   val emotionPipeline: Pipeline = new Pipeline()
     .setStages(Array(documentAssembler, tokenizer, sequenceClassifier))
-  def processDF(sentimentDF: DataFrame, emotionPipeline: Pipeline): DataFrame = {
+  def processedDF(sentimentDF: DataFrame, emotionPipeline: Pipeline): DataFrame = {
 
     emotionPipeline.fit(sentimentDF).transform(sentimentDF)
       .select($"created_at",
@@ -182,11 +180,17 @@ object consumer {
       .mode("append")
       .option("uri", mdbUri)
       .save()
+
+    innerJoin.write
+      .format("parquet")
+      .mode("append")
+      .option("path", "s3a://twitter-kafka-app/raw-data/")
+      .partitionBy("emotion", "counts")
   }
 
   def main(args: Array[String]): Unit = {
     readFromKafka()
-    aggregateDF(processDF(transformSentimentDF(sentimentPipeline), emotionPipeline))
+    aggregateDF(processedDF(transformSentimentDF(sentimentPipeline), emotionPipeline))
   }
 }
 
