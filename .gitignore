@@ -2,14 +2,14 @@ config_create.py
 config.ini
 
 # scala/intellij
-target/
-*.log
-*.iml
-*.ipr
-*.iws
-.idea
-.history
-.scala_dependencies
-.cache-main
-*.class
-.bsp/
+spark-app/target/
+spark-app/*.log
+spark-app/*.iml
+spark-app/*.ipr
+spark-app/*.iws
+spark-app/.idea
+spark-app/.history
+spark-app/.scala_dependencies
+spark-app/.cache-main
+spark-app/*.class
+spark-app/.bsp/
