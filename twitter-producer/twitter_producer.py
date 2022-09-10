@@ -13,19 +13,13 @@ producer = Producer({
 })
 
 def topics_config(topics, servers):
-  """Create and configure topics for the cluster."""
-  # Instantiation 
+
   a = AdminClient({'bootstrap.servers': servers})
 
-  # Setting topics config
-  # I.e., each topic is to have three partitions and its data a replication factor of three 
   topics = [NewTopic(topic, num_partitions=3, replication_factor=3) for topic in topics]
 
-  # Use create_topics to create the topics
-  # Returns a dict of topic:future
   fs = a.create_topics(topics, request_timeout=15.0)
 
-  #
   for topic, f in fs.items():
     try:
       f.result() # returns None
@@ -34,9 +28,7 @@ def topics_config(topics, servers):
       print(f"Failed to create topic {topic} -- {e}.")
 
 def send_message(data, name_topic, id):
-  """Begin sending messages and assign every message a key
-     based on the tweet ID.
-  """
+
   producer.produce(topic=name_topic, value=data, 
                    key=f"{name_topic[:2].upper()}{id}".encode('utf-8'))
 
@@ -76,20 +68,4 @@ class Listener(tweepy.StreamingClient):
    
   def on_error(self, status):
     print(status)
-
-tags = ["putin", "zelensky", "biden", "nato"]
-query = " -is:retweet -has:hashtags"
-rules = [f"putin {query}",
-    f"zelensky {query}",
-    f"biden {query}",
-    f"nato {query}"]
-
-config = configparser.ConfigParser()
-config.read('config.ini')
-
-bearer_token = config['twitter']['bearer_token']
-
-check_rules(bearer_token, rules, tags)
-topics_config(topics=tags, servers=servers)
-Listener(bearer_token).filter(tweet_fields=['created_at'])
   

@@ -1,5 +1,5 @@
-config_create.py
-config.ini
+twitter-producer/config_create.py
+twitter-producer/config.ini
 
 # scala/intellij
 /target
